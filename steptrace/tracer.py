@@ -79,7 +79,7 @@ class Tracer:
         for key, value in variables.items():
             if key.startswith("__") and key.endswith("__"):
                 continue
-            if isinstance(value, Tracer) or value == Tracer or not self._is_tracable_var(value):
+            if isinstance(value, (Tracer, type)) or not self._is_tracable_var(value):
                 continue
             if hasattr(value, "__spec__") and not self._is_tracable(value.__spec__.origin):
                 continue
