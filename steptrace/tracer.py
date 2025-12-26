@@ -18,13 +18,16 @@ class Tracer:
                 counter += 1
             self.log_path = os.path.join(log_dir, f"tracer_{counter}.log")
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
-        self.timer = None
+        self._timer = None
 
     def _is_tracable(self, filename):
         if filename.startswith("<") or filename == __file__:
             return False
 
         if self.filter_workspace:
+            if "ipykernel" in filename and self._in_jupyter:
+                return True
+
             if not filename.startswith(self.workspace):
                 return False
 
@@ -37,6 +40,18 @@ class Tracer:
         if "builtin" in type(var).__name__:
             return False
         return True
+
+    def _is_jupyter_notebook(self):
+        try:
+            shell = get_ipython().__class__.__name__
+            if shell == 'ZMQInteractiveShell':
+                return True   # Jupyter notebook or qtconsole
+            elif shell == 'TerminalInteractiveShell':
+                return False  # Terminal IPython
+            else:
+                return False  # Other type (unknown)
+        except NameError:
+            return False
 
     def _file(self, frame):
         files = []
@@ -79,11 +94,11 @@ class Tracer:
     def _log(self, frame):
         if not self._is_tracable(frame.f_code.co_filename):
             return
-        self.step += 1
+        self._step += 1
         step_root = self._file(frame)
         text = (
-            f"--------------------- Step {self.step} ---------------------\n"
-            f"Runtime: {(time.perf_counter() - self.timer) * 1000:.4f} ms\n"
+            f"--------------------- Step {self._step} ---------------------\n"
+            f"Runtime: {(time.perf_counter() - self._timer) * 1000:.4f} ms\n"
             f"{step_root}\n"
             f"{self._all_variables(frame)}"
         )
@@ -96,12 +111,11 @@ class Tracer:
                 self._log(frame)
             except Exception as e:
                 print(e)
-        self.timer = time.perf_counter()
+        self._timer = time.perf_counter()
         return self._run_tracer
 
     def __enter__(self):
-        self.step = 0
-        self.timer = time.perf_counter()
+        self._initialize()
         self._previous_trace = sys.gettrace()
         sys.settrace(self._run_tracer)
         return self
@@ -110,10 +124,14 @@ class Tracer:
         sys.settrace(self._previous_trace)
         return False
 
+    def _initialize(self):
+        self._step = 0
+        self._timer = time.perf_counter()
+        self._in_jupyter = self._is_jupyter_notebook()
+
     def trace(self, func):
         def wrap():
-            self.step = 0
-            self.timer = time.perf_counter()
+            self._initialize()
             sys.settrace(self._run_tracer)
             func()
             sys.settrace(None)
