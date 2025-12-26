@@ -25,7 +25,7 @@ Designed for debugging, learning, and understanding program flow.
 ## Installation
 
 ```bash
-pip install steptrace
+pip install python-steptrace
 ```
 
 ---
