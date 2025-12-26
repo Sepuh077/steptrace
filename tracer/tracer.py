@@ -1,11 +1,13 @@
 import sys
 import os
 import time
+import inspect
 
 
 class Tracer:
     def __init__(self):
-        self.workspace = os.path.dirname(os.path.abspath(sys.argv[0]))
+        self.workspace = os.path.dirname(os.path.abspath(inspect.stack()[-1].filename))
+
         self.log_path = os.path.join(self.workspace, ".tracer", "tracer.log")
         if os.path.exists(self.log_path):
             counter = 1
@@ -84,7 +86,6 @@ class Tracer:
             f.write(text)
 
     def _run_tracer(self, frame, event, arg):
-        print(frame.f_code.co_filename)
         if event == "line":
             try:
                 self._log(frame)
