@@ -1,6 +1,8 @@
-from .tracer import Tracer
-
+from .tracer import LogLevel, LogOutput, Tracer, VariableMode
 
 __all__ = [
-    "Tracer"
+    "Tracer",
+    "LogLevel",
+    "LogOutput",
+    "VariableMode",
 ]
