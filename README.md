@@ -15,6 +15,9 @@ Designed for debugging, learning, and understanding program flow.
 - **Configurable log levels** (DEBUG, INFO, WARNING, ERROR, SILENT)
 - **Flexible output destinations** (FILE, STDOUT, STDERR, or combinations)
 - **Variable tracking modes** (ALL, CHANGED, NONE)
+- **Command-line interface** for running scripts directly
+- **Configuration files** (YAML, TOML) support
+- **Asyncio tracing** with await point duration tracking
 - Automatically ignores:
   - Built-in modules
   - `site-packages`
@@ -29,11 +32,41 @@ Designed for debugging, learning, and understanding program flow.
 
 ```bash
 pip install python-steptrace
+
+# With YAML config support
+pip install python-steptrace[yaml]
+
+# With TOML config support (Python < 3.11)
+pip install python-steptrace[toml]
+
+# With all features
+pip install python-steptrace[all]
 ```
 
 ---
 
 ## Quick Start
+
+### Command-Line Interface (NEW!)
+
+Run any Python script with tracing enabled:
+
+```bash
+# Basic usage
+python -m steptrace run script.py
+
+# With arguments to your script
+python -m steptrace run script.py arg1 arg2
+
+# With tracing options
+python -m steptrace run script.py --log-output STDOUT --variable-mode CHANGED
+
+# With configuration file
+python -m steptrace run script.py --config steptrace.yaml
+
+# With asyncio tracing
+python -m steptrace run async_script.py --trace-async
+```
 
 ### Context Manager (Recommended)
 
@@ -49,8 +82,6 @@ with Tracer():
     main()
 ```
 
----
-
 ### Decorator Usage
 
 ```python
@@ -63,6 +94,229 @@ def main():
     print(a + b)
 
 main()
+```
+
+---
+
+## Command-Line Interface
+
+The CLI provides a convenient way to trace any Python script without modifying its code.
+
+### Basic Usage
+
+```bash
+python -m steptrace run script.py
+```
+
+### CLI Options
+
+```
+Options:
+  -c, --config FILE       Path to configuration file (YAML or TOML)
+  --log-level LEVEL       Log verbosity: DEBUG, INFO, WARNING, ERROR, SILENT
+  --log-output OUTPUT     Output destination: FILE, STDOUT, STDERR, FILE_STDOUT, FILE_STDERR
+  --variable-mode MODE    Variable logging: ALL, CHANGED, NONE
+  --log-dir DIR           Directory for log files (default: .tracer)
+  --no-filter-workspace   Trace all files, not just workspace files
+  --traceable-functions   List of function names to trace
+  --trace-async           Enable asyncio coroutine tracing
+  --async-threshold-ms    Only log awaits taking longer than this (ms)
+```
+
+### Examples
+
+```bash
+# Debug mode with stdout output
+python -m steptrace run script.py --log-level DEBUG --log-output STDOUT
+
+# Only track changed variables
+python -m steptrace run script.py --variable-mode CHANGED --log-output STDOUT
+
+# Trace specific functions
+python -m steptrace run script.py --traceable-functions main process_data
+
+# Async tracing with threshold
+python -m steptrace run async_app.py --trace-async --async-threshold-ms 10
+```
+
+---
+
+## Configuration Files
+
+Steptrace supports configuration via YAML and TOML files, including `pyproject.toml`.
+
+### YAML Configuration (steptrace.yaml)
+
+```yaml
+log_level: INFO
+log_output: FILE
+variable_mode: ALL
+log_dir: .tracer
+filter_workspace: true
+
+# Asyncio options
+trace_async: false
+async_threshold_ms: 0.0
+
+# Optional: trace only specific functions
+# traceable_functions:
+#   - main
+#   - my_function
+```
+
+### TOML Configuration (steptrace.toml)
+
+```toml
+log_level = "INFO"
+log_output = "FILE"
+variable_mode = "ALL"
+log_dir = ".tracer"
+filter_workspace = true
+
+trace_async = false
+async_threshold_ms = 0.0
+```
+
+### pyproject.toml
+
+Add a `[tool.steptrace]` section to your project's pyproject.toml:
+
+```toml
+[tool.steptrace]
+log_level = "DEBUG"
+log_output = "STDOUT"
+variable_mode = "CHANGED"
+```
+
+### Using Config Files
+
+```bash
+# Explicit config file
+python -m steptrace run script.py --config steptrace.yaml
+
+# CLI options override config file settings
+python -m steptrace run script.py --config steptrace.yaml --log-level DEBUG
+```
+
+---
+
+## Asyncio Tracing (NEW!)
+
+Steptrace can trace asyncio coroutines, await points, and their durations.
+
+### Using AsyncTracer
+
+```python
+import asyncio
+from steptrace import AsyncTracer, LogOutput
+
+async def fetch_data(url):
+    await asyncio.sleep(0.1)  # Simulate network request
+    return {"url": url, "data": "..."}
+
+async def main():
+    data = await fetch_data("https://api.example.com")
+    print(data)
+
+# Create async tracer
+tracer = AsyncTracer(
+    log_output=LogOutput.STDOUT,
+    await_threshold_ms=0.0,  # Log all awaits (0 = no threshold)
+)
+
+# Option 1: Decorator
+@tracer.trace_async
+async def traced_main():
+    await main()
+
+asyncio.run(traced_main())
+
+# Option 2: run_async
+async def run():
+    await tracer.run_async(main())
+
+asyncio.run(run())
+```
+
+### Tracing Concurrent Operations
+
+```python
+from steptrace import AsyncTracer
+
+tracer = AsyncTracer(log_output=LogOutput.STDOUT)
+
+async def example():
+    # Traced gather
+    results = await tracer.gather(
+        fetch_data("url1"),
+        fetch_data("url2"),
+        fetch_data("url3"),
+    )
+    
+    # Traced task creation
+    task = tracer.wrap_task(fetch_data("url4"), "my_task")
+    result = await task
+    
+    return results
+
+asyncio.run(tracer.run_async(example()))
+```
+
+### Explicit Await Tracing
+
+```python
+async def example():
+    # Trace specific awaits with custom labels
+    result = await tracer.trace_await(
+        some_async_call(),
+        "some_async_call()"
+    )
+```
+
+### Await Threshold
+
+Only log awaits that take longer than a threshold:
+
+```python
+# Only log awaits taking > 10ms
+tracer = AsyncTracer(await_threshold_ms=10.0)
+```
+
+### CLI Async Tracing
+
+```bash
+# Enable async tracing
+python -m steptrace run async_app.py --trace-async
+
+# With threshold (only log slow awaits)
+python -m steptrace run async_app.py --trace-async --async-threshold-ms 50
+```
+
+### Async Log Output Example
+
+```
+--------------------- Async Step 1 ---------------------
+Time: 0.1234 ms | CORO
+🚀 COROUTINE START: fetch_data
+
+--------------------- Async Step 2 ---------------------
+Time: 0.5678 ms | AWAIT
+⏳ AWAIT START: fetch_data
+   File: /path/to/script.py:15
+   Expression: sleep(0.1)
+
+--------------------- Async Step 3 ---------------------
+Time: 100.1234 ms | AWAIT
+⌛ AWAIT END: fetch_data ✓
+   File: /path/to/script.py:15
+   Duration: 100.0123 ms
+
+--------------------- Async Step 4 ---------------------
+Time: 100.5678 ms | CORO
+🏁 COROUTINE END: fetch_data ✓
+   Total duration: 100.4321 ms
+   Await points: 1
+   Total await time: 100.0123 ms
 ```
 
 ---
@@ -93,8 +347,6 @@ with Tracer(log_level=LogLevel.SILENT):
     main()
 ```
 
----
-
 ### Log Output Destination
 
 Choose where to send log output:
@@ -123,8 +375,6 @@ with Tracer(log_output=LogOutput.FILE_STDERR):
     main()
 ```
 
----
-
 ### Variable Logging Mode
 
 Control how variables are logged:
@@ -144,8 +394,6 @@ with Tracer(variable_mode=VariableMode.CHANGED):
 with Tracer(variable_mode=VariableMode.NONE):
     main()
 ```
-
----
 
 ### Combined Configuration
 
@@ -228,6 +476,13 @@ The tracer uses Python's `sys.settrace` to intercept execution **on every line**
 - Call stack
 - Local and global variables
 
+For async tracing, it wraps coroutines and tracks:
+
+- Coroutine creation and completion
+- Await points and their durations
+- Task creation and completion
+- Concurrent operations (gather, tasks)
+
 Only files inside your project workspace are traced to keep output relevant.
 
 ---
@@ -252,6 +507,8 @@ with Tracer():
 - Understanding unfamiliar codebases
 - Teaching / learning Python execution flow
 - Inspecting variable evolution over time
+- **Profiling async applications**
+- **Finding slow await points**
 
 ---
 
@@ -260,6 +517,7 @@ with Tracer():
 - Tracing every line may generate large log files
 - Not intended for production use
 - Performance overhead for long-running programs
+- Async tracing requires explicit wrapping of coroutines
 
 ---
 
@@ -278,6 +536,9 @@ python tests/test_log_level.py
 python tests/test_log_output.py
 python tests/test_variable_mode.py
 python tests/test_all_options.py
+python tests/test_config.py
+python tests/test_async_tracer.py
+python tests/test_cli.py
 ```
 
 ---

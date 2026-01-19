@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-steptrace"
-version = "0.2.0"
-description = "A lightweight line-by-line Python execution tracer"
+version = "0.3.0"
+description = "A lightweight line-by-line Python execution tracer with asyncio support"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -13,14 +13,37 @@ authors = [
 ]
 requires-python = ">=3.10"
 
-keywords = ["debugging", "tracing", "python"]
+keywords = ["debugging", "tracing", "python", "asyncio", "coroutines"]
 
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent"
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Debuggers",
+    "Framework :: AsyncIO"
 ]
+
+[project.optional-dependencies]
+yaml = ["pyyaml>=6.0"]
+toml = ["tomli>=2.0; python_version < '3.11'"]
+all = [
+    "pyyaml>=6.0",
+    "tomli>=2.0; python_version < '3.11'"
+]
+
+[project.scripts]
+steptrace = "steptrace.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/Sepuh077/steptrace"
 Repository = "https://github.com/Sepuh077/steptrace"
+
+[tool.steptrace]
+# Default configuration for steptrace itself
+log_level = "INFO"
+log_output = "FILE"
+variable_mode = "ALL"
+log_dir = ".tracer"
