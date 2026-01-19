@@ -44,6 +44,7 @@ class Tracer:
         log_level: Union[LogLevel, int] = LogLevel.INFO,
         log_output: Union[LogOutput, int] = LogOutput.FILE,
         variable_mode: Union[VariableMode, int] = VariableMode.ALL,
+        _workspace_override: str = None,
     ):
         """
         Initialize the Tracer.
@@ -55,8 +56,21 @@ class Tracer:
             log_level: Verbosity level (DEBUG, INFO, WARNING, ERROR, SILENT).
             log_output: Output destination (FILE, STDOUT, STDERR, FILE_STDOUT, FILE_STDERR).
             variable_mode: Variable logging mode (ALL, CHANGED, NONE).
+            _workspace_override: Internal use - override workspace path for CLI.
         """
-        self.workspace = os.path.dirname(os.path.abspath(inspect.stack()[-1].filename))
+        if _workspace_override:
+            self.workspace = _workspace_override
+        else:
+            # Detect workspace based on the caller's file (where Tracer is instantiated)
+            # This is more reliable than using the program entry point, especially for pytest
+            caller_frame = inspect.stack()[1]
+            caller_file = caller_frame.filename
+            # If called from a real file, use its directory as workspace
+            if not caller_file.startswith("<"):
+                self.workspace = os.path.dirname(os.path.abspath(caller_file))
+            else:
+                # Fallback to entry point for interactive/script usage
+                self.workspace = os.path.dirname(os.path.abspath(inspect.stack()[-1].filename))
         self.filter_workspace = filter_workspace
         self.tracable_functions = tracable_functions
 
@@ -83,9 +97,75 @@ class Tracer:
         self._timer = None
         self._previous_globals = {}
         self._previous_locals = {}
+        
+        # Get the steptrace package directory to exclude from tracing
+        self._steptrace_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Get paths to exclude (standard library, site-packages, etc.)
+        self._excluded_paths = self._get_excluded_paths()
+
+    def _get_excluded_paths(self):
+        """Get list of paths to exclude from tracing (stdlib, site-packages, etc.)."""
+        excluded = set()
+        
+        # Python standard library paths
+        import sysconfig
+        stdlib_path = sysconfig.get_path('stdlib')
+        if stdlib_path:
+            excluded.add(stdlib_path)
+        
+        # Platform-specific stdlib
+        platstdlib = sysconfig.get_path('platstdlib')
+        if platstdlib:
+            excluded.add(platstdlib)
+        
+        # Site-packages paths
+        purelib = sysconfig.get_path('purelib')
+        if purelib:
+            excluded.add(purelib)
+        platlib = sysconfig.get_path('platlib')
+        if platlib:
+            excluded.add(platlib)
+        
+        # sys.prefix and sys.base_prefix (covers most standard locations)
+        if sys.prefix:
+            excluded.add(sys.prefix)
+        if sys.base_prefix and sys.base_prefix != sys.prefix:
+            excluded.add(sys.base_prefix)
+        
+        # Common system paths
+        excluded.add('/usr/lib')
+        excluded.add('/usr/local/lib')
+        
+        # Steptrace package
+        excluded.add(self._steptrace_dir)
+        
+        return [p for p in excluded if p]
+
+    def _is_external_file(self, filename):
+        """Check if a file is from an external library (stdlib, site-packages, etc.)."""
+        if not filename or filename.startswith("<"):
+            return True
+        
+        # Check against excluded paths
+        for excluded_path in self._excluded_paths:
+            if filename.startswith(excluded_path):
+                return True
+        
+        # Additional checks
+        if "site-packages" in filename:
+            return True
+        if "dist-packages" in filename:
+            return True
+        
+        return False
 
     def _is_tracable(self, filename):
         if filename.startswith("<") or filename == __file__:
+            return False
+        
+        # Exclude external files (stdlib, site-packages, steptrace, etc.)
+        if self._is_external_file(filename):
             return False
 
         if self.filter_workspace:
@@ -130,7 +210,11 @@ class Tracer:
 
         text = ""
         for file in files[2:]:
-            text += f"{file.f_code.co_filename}::{file.f_code.co_name} -- line {file.f_lineno}\n"
+            filename = file.f_code.co_filename
+            # Skip external files (stdlib, site-packages, steptrace, etc.) in call stack
+            if self._is_external_file(filename):
+                continue
+            text += f"{filename}::{file.f_code.co_name} -- line {file.f_lineno}\n"
 
         text += f"{frame.f_code.co_filename}::{frame.f_code.co_name} -- line {frame.f_lineno}\n"
         return text
