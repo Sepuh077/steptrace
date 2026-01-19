@@ -37,6 +37,9 @@ def main():
         "test_log_output.py",
         "test_variable_mode.py",
         "test_all_options.py",
+        "test_config.py",
+        "test_async_tracer.py",
+        "test_cli.py",
     ]
 
     print("\n" + "=" * 60)
